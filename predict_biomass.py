@@ -1,7 +1,5 @@
 from datetime import datetime, timedelta
 import os
-import pickle
-import sys
 import zarr
 import numpy as np
 from tensorflow import keras
@@ -11,14 +9,14 @@ import xarray as xr
 from stats import load_stats
 from download_and_format import load_and_format_datasets
 
-from modeles.zooc_medit import GroupModel as zooc_medit
-from modeles.epi_medit import GroupModel as epi_medit
-from modeles.hmlmeso_medit import GroupModel as hmlmeso_medit
-from modeles.lmeso_medit import GroupModel as lmeso_medit
-from modeles.mlmeso_medit import GroupModel as mlmeso_medit
-from modeles.mumeso_medit import GroupModel as mumeso_medit
-from modeles.umeso_medit import GroupModel as umeso_medit
-from modeles.ABCmodel import MetadataModel
+from loaders.zooc_medit import GroupModel as zooc_medit
+from loaders.epi_medit import GroupModel as epi_medit
+from loaders.hmlmeso_medit import GroupModel as hmlmeso_medit
+from loaders.lmeso_medit import GroupModel as lmeso_medit
+from loaders.mlmeso_medit import GroupModel as mlmeso_medit
+from loaders.mumeso_medit import GroupModel as mumeso_medit
+from loaders.umeso_medit import GroupModel as umeso_medit
+from loaders.ABCmodel import MetadataModel
 
 
 GROUPS = ["zooc", "mnkc_epi", "mnkc_hmlmeso", "mnkc_lmeso", "mnkc_mlmeso", "mnkc_mumeso", "mnkc_umeso"]
@@ -61,209 +59,195 @@ x_mask = x_mask[iy:iy+512, ix:ix+512, :]
 x_mask = crop_to_medit(x_mask)
 x_mask = filter_to_medit(x_mask, fill_value=0)
 
+def predict_biomass(ds):
+    start_date = ds.time.values[0]
+    end_date = ds.time.values[-1]
 
-times = []
-predictions_history = {group: [] for group in GROUPS}
-additional_fields = ["mask", "T", "U", "V"]
-for layer in ["epi", "umeso", "lmeso"]:
-    for field in additional_fields:
-        predictions_history[f"{field}_{layer}"] = []
-predictions_history["npp"] = []
+    times = []
+    predictions_history = {group: [] for group in GROUPS}
+    additional_fields = ["mask", "T", "U", "V"]
+    for layer in ["epi", "umeso", "lmeso"]:
+        for field in additional_fields:
+            predictions_history[f"{field}_{layer}"] = []
+    predictions_history["npp"] = []
 
-ds = load_and_format_datasets()
-start_date = ds.time.values[0]
-end_date = ds.time.values[-1]
+    current_date = start_date
+    while current_date <= end_date:
+        t = (current_date - start_date).days
+        doy = start_date.timetuple().tm_yday
+        times.append(current_date)
+        predictions_history['mask_epi'].append(y_mask[..., 0])
+        predictions_history['mask_umeso'].append(y_mask[..., 1])
+        predictions_history['mask_lmeso'].append(y_mask[..., 2])
+        print(f"Predicting for {current_date.strftime('%Y-%m-%d')} (t={t})")
+        for name, (loader, model, group, mask_layer) in modeles.items():
+            # metadata = [-80 + iy/12, -180 + ix/12, doy, 2026, group]
+            x_combined = loader._build_x(ds, t, day_of_year=t+doy-1)
+            input_tensor = tf.convert_to_tensor(np.expand_dims(x_combined, axis=0), dtype=tf.float32)
+            pred_tensor = model(input_tensor, training=False)
+            mem_info = tf.config.experimental.get_memory_info('GPU:0')
+            print(f"Pic de VRAM: {mem_info['peak'] / (1024**3):.2f} Go")
+            pred = np.squeeze(pred_tensor.numpy())
+            pred = crop_to_medit(pred)
+            pred = filter_to_medit(pred, fill_value=np.nan)
+            x_combined = crop_to_medit(x_combined)
+            x_combined = filter_to_medit(x_combined, fill_value=np.nan)
+            # x_dict = {"input_field": x_combined, "metadata": metadata}
+            # pred = np.squeeze(model.predict(np.expand_dims(x_combined, axis=0)))
 
-current_date = start_date
-while current_date <= end_date:
-    t = (current_date - start_date).days
-    doy = start_date.timetuple().tm_yday
-    times.append(current_date)
-    predictions_history['mask_epi'].append(y_mask[..., 0])
-    predictions_history['mask_umeso'].append(y_mask[..., 1])
-    predictions_history['mask_lmeso'].append(y_mask[..., 2])
-    print(f"Predicting for {current_date.strftime('%Y-%m-%d')} (t={t})")
-    for name, (loader, model, group, mask_layer) in modeles.items():
-        # metadata = [-80 + iy/12, -180 + ix/12, doy, 2026, group]
-        x_combined = loader._build_x(curr_x, t, 0, 0, group, global_coords=(iy, ix), global_t=t+doy-1)
-        input_tensor = tf.convert_to_tensor(np.expand_dims(x_combined, axis=0), dtype=tf.float32)
-        pred_tensor = model(input_tensor, training=False)
-        mem_info = tf.config.experimental.get_memory_info('GPU:0')
-        print(f"Pic de VRAM: {mem_info['peak'] / (1024**3):.2f} Go")
-        pred = np.squeeze(pred_tensor.numpy())
-        pred = crop_to_medit(pred)
-        pred = filter_to_medit(pred, fill_value=np.nan)
-        x_combined = crop_to_medit(x_combined)
-        x_combined = filter_to_medit(x_combined, fill_value=np.nan)
-        # x_dict = {"input_field": x_combined, "metadata": metadata}
-        # pred = np.squeeze(model.predict(np.expand_dims(x_combined, axis=0)))
+            group_name = GROUPS[group]
+            group_mean = float(mean_bio[group_name])
+            group_std = float(std_bio[group_name])
 
-        group_name = GROUPS[group]
-        group_mean = float(mean_Y[group_name])
-        group_std = float(std_Y[group_name])
+            pred_phys = pred[:, :] * group_std + group_mean # dé-normalisation
+            pred_phys = 10 ** pred_phys - 1e-8 # Inverse de la log10 appliquée lors de la préparation des données
 
-        pred_phys = pred[:, :] * group_std + group_mean # dé-normalisation
-        pred_phys = 10 ** pred_phys - 1e-8 # Inverse de la log10 appliquée lors de la préparation des données
+            pred_phys[np.squeeze(y_mask[..., mask_layer]) == 0] = np.nan
 
-        pred_phys[np.squeeze(y_mask[..., mask_layer]) == 0] = np.nan
+            predictions_history[group_name].append(pred_phys)
 
-        predictions_history[group_name].append(pred_phys)
+            if name == "epi medit":
+                x_combined[np.squeeze(x_mask[..., 0]) == 0] = np.nan
+                T = x_combined[:, :, 2]
+                mean_T = mean_phys["T"].sel(depth=1).values
+                std_T = std_phys["T"].sel(depth=1).values
+                T = T * std_T + mean_T
+                U = x_combined[:, :, 0]
+                mean_U = mean_phys["U"].sel(depth=1).values
+                std_U = std_phys["U"].sel(depth=1).values
+                U = U * std_U + mean_U
+                V = x_combined[:, :, 1]
+                mean_V = mean_phys["V"].sel(depth=1).values
+                std_V = std_phys["V"].sel(depth=1).values
+                V = V * std_V + mean_V
+                npp = x_combined[:, :, 3]
+                mean_npp = mean_bio["npp"].values
+                std_npp = std_bio["npp"].values
+                npp = npp * std_npp + mean_npp
+                npp = 10 ** npp - 1e-8
+                predictions_history['T_epi'].append(T)
+                predictions_history['U_epi'].append(U)
+                predictions_history['V_epi'].append(V)
+                predictions_history['npp'].append(npp)
+            elif name == "lmeso medit":
+                x_combined[np.squeeze(x_mask[..., 2]) == 0] = np.nan
+                T = x_combined[:, :, 2]
+                mean_T = mean_phys["T"].sel(depth=1).values
+                std_T = std_phys["T"].sel(depth=1).values
+                T = T * std_T + mean_T
+                U = x_combined[:, :, 0]
+                mean_U = mean_phys["U"].sel(depth=1).values
+                std_U = std_phys["U"].sel(depth=1).values
+                U = U * std_U + mean_U
+                V = x_combined[:, :, 1]
+                mean_V = mean_phys["V"].sel(depth=1).values
+                std_V = std_phys["V"].sel(depth=1).values
+                V = V * std_V + mean_V
+                predictions_history['T_lmeso'].append(T)
+                predictions_history['U_lmeso'].append(U)
+                predictions_history['V_lmeso'].append(V)
+            elif name == "umeso medit":
+                x_combined[np.squeeze(x_mask[..., 1]) == 0] = np.nan
+                T = x_combined[:, :, 2]
+                mean_T = mean_phys["T"].sel(depth=1).values
+                std_T = std_phys["T"].sel(depth=1).values
+                T = T * std_T + mean_T
+                U = x_combined[:, :, 0]
+                mean_U = mean_phys["U"].sel(depth=1).values
+                std_U = std_phys["U"].sel(depth=1).values
+                U = U * std_U + mean_U
+                V = x_combined[:, :, 1]
+                mean_V = mean_phys["V"].sel(depth=1).values
+                std_V = std_phys["V"].sel(depth=1).values
+                V = V * std_V + mean_V
+                predictions_history['T_umeso'].append(T)
+                predictions_history['U_umeso'].append(U)
+                predictions_history['V_umeso'].append(V)
 
-        if name == "epi medit":
-            x_combined[np.squeeze(x_mask[..., 0]) == 0] = np.nan
-            T = x_combined[:, :, 2]
-            mean_T = mean_X["T"].sel(depth=1).values
-            std_T = std_X["T"].sel(depth=1).values
-            T = T * std_T + mean_T
-            U = x_combined[:, :, 0]
-            mean_U = mean_X["U"].sel(depth=1).values
-            std_U = std_X["U"].sel(depth=1).values
-            U = U * std_U + mean_U
-            V = x_combined[:, :, 1]
-            mean_V = mean_X["V"].sel(depth=1).values
-            std_V = std_X["V"].sel(depth=1).values
-            V = V * std_V + mean_V
-            npp = x_combined[:, :, 3]
-            mean_npp = mean_Y["npp"].values
-            std_npp = std_Y["npp"].values
-            npp = npp * std_npp + mean_npp
-            npp = 10 ** npp - 1e-8
-            predictions_history['T_epi'].append(T)
-            predictions_history['U_epi'].append(U)
-            predictions_history['V_epi'].append(V)
-            predictions_history['npp'].append(npp)
-        elif name == "lmeso medit":
-            x_combined[np.squeeze(x_mask[..., 2]) == 0] = np.nan
-            T = x_combined[:, :, 2]
-            mean_T = mean_X["T"].sel(depth=1).values
-            std_T = std_X["T"].sel(depth=1).values
-            T = T * std_T + mean_T
-            U = x_combined[:, :, 0]
-            mean_U = mean_X["U"].sel(depth=1).values
-            std_U = std_X["U"].sel(depth=1).values
-            U = U * std_U + mean_U
-            V = x_combined[:, :, 1]
-            mean_V = mean_X["V"].sel(depth=1).values
-            std_V = std_X["V"].sel(depth=1).values
-            V = V * std_V + mean_V
-            predictions_history['T_lmeso'].append(T)
-            predictions_history['U_lmeso'].append(U)
-            predictions_history['V_lmeso'].append(V)
-        elif name == "umeso medit":
-            x_combined[np.squeeze(x_mask[..., 1]) == 0] = np.nan
-            T = x_combined[:, :, 2]
-            mean_T = mean_X["T"].sel(depth=1).values
-            std_T = std_X["T"].sel(depth=1).values
-            T = T * std_T + mean_T
-            U = x_combined[:, :, 0]
-            mean_U = mean_X["U"].sel(depth=1).values
-            std_U = std_X["U"].sel(depth=1).values
-            U = U * std_U + mean_U
-            V = x_combined[:, :, 1]
-            mean_V = mean_X["V"].sel(depth=1).values
-            std_V = std_X["V"].sel(depth=1).values
-            V = V * std_V + mean_V
-            predictions_history['T_umeso'].append(T)
-            predictions_history['U_umeso'].append(U)
-            predictions_history['V_umeso'].append(V)
-
-
-    current_date += timedelta(days=1)
+        current_date += timedelta(days=1)
 
 
+    lat_start, lon_start = iy/12 - 80, ix/12 - 180
+    lats = np.linspace(lat_start, lat_start + 220 * 1/12, 220)
+    lons = np.linspace(lon_start, lon_start + 512 * 1/12, 512)
 
-lat_start, lon_start = iy/12 - 80, ix/12 - 180
-lats = np.linspace(lat_start, lat_start + 220 * 1/12, 220)
-lons = np.linspace(lon_start, lon_start + 512 * 1/12, 512)
-
-# 3. Construction du Dataset xarray
-data_vars_dict = {}
-VARIABLES = GROUPS + [f"{field}_{layer}" for field in additional_fields for layer in ["epi", "umeso", "lmeso"]] + ["npp"]
+    data_vars_dict = {}
+    VARIABLES = GROUPS + [f"{field}_{layer}" for field in additional_fields for layer in ["epi", "umeso", "lmeso"]] + ["npp"]
 
 
-full_names = {
-    "zooc": "mass_content_of_zooplankton_expressed_as_carbon_in_sea_water",
-    "mnkc_epi": "ocean_wet_mass_content_of_epipelagic_micronekton",
-    "mnkc_umeso": "ocean_wet_mass_content_of_upper_mesopelagic_micronekton",
-    "mnkc_mumeso": "ocean_wet_mass_content_of_migrant_upper_mesopelagic_micronekton",
-    "mnkc_lmeso": "ocean_wet_mass_content_of_lower_mesopelagic_micronekton",
-    "mnkc_mlmeso": "ocean_wet_mass_content_of_migrant_lower_mesopelagic_micronekton",
-    "mnkc_hmlmeso": "ocean_wet_mass_content_of_highly_migrant_lower_mesopelagic_micronekton",
-    "npp": "net_primary_productivity_of_biomass_expressed_as_carbon_in_sea_water",
-    "mask_epi": "binary_mask_of_valid_predictions_for_epipelagic_layer",
-    "mask_umeso": "binary_mask_of_valid_predictions_for_upper_mesopelagic_layer",
-    "mask_lmeso": "binary_mask_of_valid_predictions_for_lower_mesopelagic_layer",
-    "T_epi": "sea_water_potential_temperature_vertical_mean_over_epipelagic_layer",
-    "U_epi": "eastward_sea_water_velocity_vertical_mean_over_epipelagic_layer",
-    "V_epi": "northward_sea_water_velocity_vertical_mean_over_epipelagic_layer",
-    "T_umeso": "sea_water_potential_temperature_vertical_mean_over_upper_mesopelagic_layer",
-    "U_umeso": "eastward_sea_water_velocity_vertical_mean_over_upper_mesopelagic_layer",
-    "V_umeso": "northward_sea_water_velocity_vertical_mean_over_upper_mesopelagic_layer",
-    "T_lmeso": "sea_water_potential_temperature_vertical_mean_over_lower_mesopelagic_layer",
-    "U_lmeso": "eastward_sea_water_velocity_vertical_mean_over_lower_mesopelagic_layer",
-    "V_lmeso": "northward_sea_water_velocity_vertical_mean_over_lower_mesopelagic_layer",
-}
-units = {
-    "zooc": "g/m^2",
-    "mnkc_epi": "g/m^2",
-    "mnkc_umeso": "g/m^2",
-    "mnkc_mumeso": "g/m^2",
-    "mnkc_lmeso": "g/m^2",
-    "mnkc_mlmeso": "g/m^2",
-    "mnkc_hmlmeso": "g/m^2",
-    "npp": "mg/m^2/day",
-    "mask_epi": "1 (binary)",
-    "mask_umeso": "1 (binary)",
-    "mask_lmeso": "1 (binary)",
-    "T_epi": "°C",
-    "U_epi": "m/s",
-    "V_epi": "m/s",
-    "T_umeso": "°C",
-    "U_umeso": "m/s",
-    "V_umeso": "m/s",
-    "T_lmeso": "°C",
-    "U_lmeso": "m/s",
-    "V_lmeso": "m/s",
-}
-
-for var in VARIABLES:
-    # On convertit la liste de matrices 2D en une matrice 3D (time, lat, lon)
-    data_3d = np.array(predictions_history[var], dtype=np.float32)
-    # On assigne les dimensions correspondantes
-    attrs = {}
-    if var in full_names:
-        attrs['long_name'] = full_names[var]
-    if var in units:
-        attrs['units'] = units[var]
-
-    data_vars_dict[var] = (["time", "lat", "lon"], data_3d, attrs)
-
-ds = xr.Dataset(
-    data_vars=data_vars_dict,
-    coords={
-        "time": times,
-        "lat": lats,
-        "lon": lons
-    },
-    attrs={
-        "description": "Zooplankton and micronekton biomass predictions for the Mediterranean Sea",
-        "creation_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "institution": "Mercator Ocean International",
-        "source": "Predictions from machine learning models trained on reanalysis products",
-        "spatial_resolution": "1/12 degree",
-        "temporal_resolution": "daily",
-        "domain": "Mediterranean Sea",
+    full_names = {
+        "zooc": "mass_content_of_zooplankton_expressed_as_carbon_in_sea_water",
+        "mnkc_epi": "ocean_wet_mass_content_of_epipelagic_micronekton",
+        "mnkc_umeso": "ocean_wet_mass_content_of_upper_mesopelagic_micronekton",
+        "mnkc_mumeso": "ocean_wet_mass_content_of_migrant_upper_mesopelagic_micronekton",
+        "mnkc_lmeso": "ocean_wet_mass_content_of_lower_mesopelagic_micronekton",
+        "mnkc_mlmeso": "ocean_wet_mass_content_of_migrant_lower_mesopelagic_micronekton",
+        "mnkc_hmlmeso": "ocean_wet_mass_content_of_highly_migrant_lower_mesopelagic_micronekton",
+        "npp": "net_primary_productivity_of_biomass_expressed_as_carbon_in_sea_water",
+        "mask_epi": "binary_mask_of_valid_predictions_for_epipelagic_layer",
+        "mask_umeso": "binary_mask_of_valid_predictions_for_upper_mesopelagic_layer",
+        "mask_lmeso": "binary_mask_of_valid_predictions_for_lower_mesopelagic_layer",
+        "T_epi": "sea_water_potential_temperature_vertical_mean_over_epipelagic_layer",
+        "U_epi": "eastward_sea_water_velocity_vertical_mean_over_epipelagic_layer",
+        "V_epi": "northward_sea_water_velocity_vertical_mean_over_epipelagic_layer",
+        "T_umeso": "sea_water_potential_temperature_vertical_mean_over_upper_mesopelagic_layer",
+        "U_umeso": "eastward_sea_water_velocity_vertical_mean_over_upper_mesopelagic_layer",
+        "V_umeso": "northward_sea_water_velocity_vertical_mean_over_upper_mesopelagic_layer",
+        "T_lmeso": "sea_water_potential_temperature_vertical_mean_over_lower_mesopelagic_layer",
+        "U_lmeso": "eastward_sea_water_velocity_vertical_mean_over_lower_mesopelagic_layer",
+        "V_lmeso": "northward_sea_water_velocity_vertical_mean_over_lower_mesopelagic_layer",
     }
-)
+    units = {
+        "zooc": "g/m^2",
+        "mnkc_epi": "g/m^2",
+        "mnkc_umeso": "g/m^2",
+        "mnkc_mumeso": "g/m^2",
+        "mnkc_lmeso": "g/m^2",
+        "mnkc_mlmeso": "g/m^2",
+        "mnkc_hmlmeso": "g/m^2",
+        "npp": "mg/m^2/day",
+        "mask_epi": "1 (binary)",
+        "mask_umeso": "1 (binary)",
+        "mask_lmeso": "1 (binary)",
+        "T_epi": "°C",
+        "U_epi": "m/s",
+        "V_epi": "m/s",
+        "T_umeso": "°C",
+        "U_umeso": "m/s",
+        "V_umeso": "m/s",
+        "T_lmeso": "°C",
+        "U_lmeso": "m/s",
+        "V_lmeso": "m/s",
+    }
 
-output_dir = "/scratch/fra1831/predictions"
-os.makedirs(output_dir, exist_ok=True) 
+    for var in VARIABLES:
+        # On convertit la liste de matrices 2D en une matrice 3D (time, lat, lon)
+        data_3d = np.array(predictions_history[var], dtype=np.float32)
+        # On assigne les dimensions correspondantes
+        attrs = {}
+        if var in full_names:
+            attrs['long_name'] = full_names[var]
+        if var in units:
+            attrs['units'] = units[var]
 
-output_filename = f"{output_dir}/{start_date_str}_{end_date_str}.nc"
+        data_vars_dict[var] = (["time", "lat", "lon"], data_3d, attrs)
 
-if os.path.exists(output_filename):
-    os.remove(output_filename)
+    ds = xr.Dataset(
+        data_vars=data_vars_dict,
+        coords={
+            "time": times,
+            "lat": lats,
+            "lon": lons
+        },
+        attrs={
+            "description": "Zooplankton and micronekton biomass predictions for the Mediterranean Sea",
+            "creation_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "institution": "Mercator Ocean International",
+            "source": "Predictions from machine learning models trained on reanalysis products",
+            "spatial_resolution": "1/12 degree",
+            "temporal_resolution": "daily",
+            "domain": "Mediterranean Sea",
+        }
+    )
 
-ds.to_netcdf(output_filename, engine="h5netcdf")
-
-print(f"Fichier sauvegardé avec succès : {output_filename}")
+    return ds
