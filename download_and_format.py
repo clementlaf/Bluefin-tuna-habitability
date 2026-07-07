@@ -1,4 +1,3 @@
-import os
 import sys
 import traceback
 from datetime import datetime, timezone, timedelta
@@ -10,27 +9,8 @@ import copernicusmarine
 from logger import log
 from stats import load_stats
 
-try:
-    folder = sys.argv[1]
-    if not os.path.exists(folder):
-        print(f"Error: The folder '{folder}' does not exist.")
-        sys.exit(1)
-    if not os.path.isdir(folder):
-        print(f"Error: The path '{folder}' is not a directory.")
-        sys.exit(1)
-except IndexError:
-    print("Error: No folder path provided. Please provide a folder path as first argument.")
-    sys.exit(1)
-
 mean_phys, std_phys = load_stats("phys")
 mean_bio, std_bio = load_stats("bio")
-
-stats = {
-    "mean_phys": mean_phys,
-    "std_phys": std_phys,
-    "mean_bio": mean_bio,
-    "std_bio": std_bio
-}
 
 datasets = {
     "temperature": {
@@ -65,8 +45,8 @@ def get_end_date():
     return closest_date
 
 
-start_date = datetime.now(timezone.utc)
-end_date = get_end_date()
+start_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+end_date = get_end_date().replace(hour=0, minute=0, second=0, microsecond=0)
 log(f"Downloading data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
 
 def is_empty(ds):
@@ -74,6 +54,7 @@ def is_empty(ds):
     return ds.to_array().isnull().all().item()
 
 def load_dataset(dname, date, backtrackded=0, min_date=None):
+    log(f"loading {dname} data for {date.strftime('%Y-%m-%d')}")
     dataset = datasets[dname]
     try:
         ds = copernicusmarine.open_dataset(
@@ -114,7 +95,7 @@ def load_and_format_datasets():
     current_date = start_date
     i = 0
     ds_formatted = None
-    while current_date <= end_date + timedelta(days=1): # timedelta necessary, looks like equality comparison is not working as expected
+    while current_date <= end_date: # timedelta necessary, looks like equality comparison is not working as expected
         ds_temperature = load_dataset("temperature", current_date)
         ds_current = load_dataset("currents", current_date)
         ds_npp = load_dataset("npp", current_date)

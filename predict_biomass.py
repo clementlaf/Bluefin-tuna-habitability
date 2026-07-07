@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-import os
 import zarr
 import numpy as np
 from tensorflow import keras
@@ -7,33 +6,29 @@ import tensorflow as tf
 import xarray as xr
 
 from stats import load_stats
-from download_and_format import load_and_format_datasets
 
-from loaders.zooc_medit import GroupModel as zooc_medit
-from loaders.epi_medit import GroupModel as epi_medit
-from loaders.hmlmeso_medit import GroupModel as hmlmeso_medit
-from loaders.lmeso_medit import GroupModel as lmeso_medit
-from loaders.mlmeso_medit import GroupModel as mlmeso_medit
-from loaders.mumeso_medit import GroupModel as mumeso_medit
-from loaders.umeso_medit import GroupModel as umeso_medit
+from loaders.single_group import GroupModel
 from loaders.ABCmodel import MetadataModel
+from logger import log
 
 
 GROUPS = ["zooc", "mnkc_epi", "mnkc_hmlmeso", "mnkc_lmeso", "mnkc_mlmeso", "mnkc_mumeso", "mnkc_umeso"]
 
 model_list = [
-        ("zooc_medit", zooc_medit, "zooc medit", 0, 0),
-        ("epi_medit", epi_medit, "epi medit", 1, 0),
-        ("hmlmeso_medit", hmlmeso_medit, "hmlmeso medit", 2, 2),
-        ("lmeso_medit", lmeso_medit, "lmeso medit", 3, 2),
-        ("mlmeso_medit", mlmeso_medit, "mlmeso medit", 4, 2),
-        ("mumeso_medit", mumeso_medit, "mumeso medit", 5, 1),
-        ("umeso_medit", umeso_medit, "umeso medit", 6, 1),
+        ("zooc_medit", "zooc medit", 0, 0),
+        ("epi_medit", "epi medit", 1, 0),
+        ("hmlmeso_medit", "hmlmeso medit", 2, 2),
+        ("lmeso_medit", "lmeso medit", 3, 2),
+        ("mlmeso_medit", "mlmeso medit", 4, 2),
+        ("mumeso_medit", "mumeso medit", 5, 1),
+        ("umeso_medit", "umeso medit", 6, 1),
     ]
 
+log("Loading models weights")
+loader = GroupModel()
 modeles = {
-    title: (loader(name), keras.models.load_model(f'/scratch/fra1831/modeles/{name}/best.keras', custom_objects={'MetadataModel': MetadataModel}, compile=False, safe_mode=False), group, mask_layer)
-    for name, loader, title, group, mask_layer in model_list
+    title: (keras.models.load_model(f'/scratch/fra1831/modeles/{name}/best.keras', custom_objects={'MetadataModel': MetadataModel}, compile=False, safe_mode=False), group, mask_layer)
+    for name, title, group, mask_layer in model_list
 }
 
 def filter_to_medit(field, fill_value=np.nan):
@@ -79,14 +74,14 @@ def predict_biomass(ds):
         predictions_history['mask_epi'].append(y_mask[..., 0])
         predictions_history['mask_umeso'].append(y_mask[..., 1])
         predictions_history['mask_lmeso'].append(y_mask[..., 2])
-        print(f"Predicting for {current_date.strftime('%Y-%m-%d')} (t={t})")
-        for name, (loader, model, group, mask_layer) in modeles.items():
+        log(f"Predicting for {current_date.strftime('%Y-%m-%d')} (t={t})")
+        for name, (model, group, mask_layer) in modeles.items():
             # metadata = [-80 + iy/12, -180 + ix/12, doy, 2026, group]
-            x_combined = loader._build_x(ds, t, day_of_year=t+doy-1)
+            x_combined = loader.build_x(ds.isel(time=t), group, day_of_year=t+doy-1)
             input_tensor = tf.convert_to_tensor(np.expand_dims(x_combined, axis=0), dtype=tf.float32)
             pred_tensor = model(input_tensor, training=False)
-            mem_info = tf.config.experimental.get_memory_info('GPU:0')
-            print(f"Pic de VRAM: {mem_info['peak'] / (1024**3):.2f} Go")
+            # mem_info = tf.config.experimental.get_memory_info('GPU:0')
+            # log(f"Pic de VRAM: {mem_info['peak'] / (1024**3):.2f} Go")
             pred = np.squeeze(pred_tensor.numpy())
             pred = crop_to_medit(pred)
             pred = filter_to_medit(pred, fill_value=np.nan)
