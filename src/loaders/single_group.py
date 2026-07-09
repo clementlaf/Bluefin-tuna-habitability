@@ -5,7 +5,7 @@ import zarr
 import numpy as np
 import tensorflow as tf
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from winpy.logger import log
+from src.logger import log
 
 
 class GroupModel():

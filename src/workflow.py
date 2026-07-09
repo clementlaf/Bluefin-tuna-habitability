@@ -14,14 +14,6 @@ def workflow():
     
     # Build habitat from predictions
     ds_habitat = build_habitat_from_predictions(ds)
-    import numpy as np
-    print("Présence de NaN :", np.isnan(ds_habitat).any())
-
-    # 2. Y a-t-il des infinis ?
-    print("Présence de Inf :", np.isinf(ds_habitat).any())
-
-    # 3. Les données ont-elles explosé ? (Devrait être proche de 0)
-    print("Min/Max de l'entrée :", np.nanmin(ds_habitat), "/", np.nanmax(ds_habitat))
     
     output_filename = f"{get_path('output')}/habitability_index.nc"
     
@@ -29,7 +21,6 @@ def workflow():
         os.remove(output_filename)
     
     ds_habitat.to_netcdf(output_filename)
-    print(ds_habitat)
 
 if __name__ == "__main__":
     workflow()

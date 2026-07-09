@@ -1,3 +1,4 @@
 *.pyc
 predict.err
 predict.log
+ecsbatch*
