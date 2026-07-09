@@ -12,11 +12,11 @@ This project aims to predict the habitability of the Mediterranean Sea for Bluef
 
 ### Requirements
 
-copernicusmarine==2.4.1
-tensorflow==2.21.0
-xarray==2026.4.0
-numpy==2.3.5
-zarr==3.2.1
+- copernicusmarine==2.4.1
+- tensorflow==2.21.0
+- xarray==2026.4.0
+- numpy==2.3.5
+- zarr==3.2.1
 
 ```bash
 pip install -r requirements.txt
@@ -24,8 +24,13 @@ pip install -r requirements.txt
 
 ## Usage
 
+Unzip PACKAGE.zip when retrieved
 Edit paths.json to set the correct paths to access model weights, static files and output files.
 
 ```bash
 python src/workflow.py
 ```
+
+## PERFORMANCES
+Without access to GPU, expect a 15 minutes runtime for the full workflow. With access to a GPU, expect a 5 minutes runtime for the full workflow.
+
