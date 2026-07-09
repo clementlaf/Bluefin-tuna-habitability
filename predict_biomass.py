@@ -1,11 +1,14 @@
 from datetime import datetime, timedelta
 import zarr
+import time
 import numpy as np
 from tensorflow import keras
 import tensorflow as tf
 import xarray as xr
+import pandas as pd
 
 from stats import load_stats
+from paths import get_path
 
 from loaders.single_group import GroupModel
 from loaders.ABCmodel import MetadataModel
@@ -27,7 +30,7 @@ model_list = [
 log("Loading models weights")
 loader = GroupModel()
 modeles = {
-    title: (keras.models.load_model(f'/scratch/fra1831/modeles/{name}/best.keras', custom_objects={'MetadataModel': MetadataModel}, compile=False, safe_mode=False), group, mask_layer)
+    title: (keras.models.load_model(f'{get_path("models")}/{name}/best_compact.keras', custom_objects={'MetadataModel': MetadataModel}, compile=False, safe_mode=False), group, mask_layer)
     for name, title, group, mask_layer in model_list
 }
 
@@ -39,7 +42,7 @@ def crop_to_medit(field):
     return field[:220, ...]
 
 ix, iy = 2094, 1322
-ressource_path = "/scratch/fra1831/ressources"
+ressource_path = get_path("static_files")
 
 mean_phys, std_phys = load_stats("phys")
 mean_bio, std_bio = load_stats("bio")
@@ -57,6 +60,8 @@ x_mask = filter_to_medit(x_mask, fill_value=0)
 def predict_biomass(ds):
     start_date = ds.time.values[0]
     end_date = ds.time.values[-1]
+    start_date = pd.to_datetime(start_date).to_pydatetime()
+    end_date = pd.to_datetime(end_date).to_pydatetime()
 
     times = []
     predictions_history = {group: [] for group in GROUPS}
@@ -76,10 +81,13 @@ def predict_biomass(ds):
         predictions_history['mask_lmeso'].append(y_mask[..., 2])
         log(f"Predicting for {current_date.strftime('%Y-%m-%d')} (t={t})")
         for name, (model, group, mask_layer) in modeles.items():
+            
             # metadata = [-80 + iy/12, -180 + ix/12, doy, 2026, group]
             x_combined = loader.build_x(ds.isel(time=t), group, day_of_year=t+doy-1)
             input_tensor = tf.convert_to_tensor(np.expand_dims(x_combined, axis=0), dtype=tf.float32)
+            t0 = time.time()
             pred_tensor = model(input_tensor, training=False)
+            log("inference time: {:.2f} seconds".format(time.time() - t0))
             # mem_info = tf.config.experimental.get_memory_info('GPU:0')
             # log(f"Pic de VRAM: {mem_info['peak'] / (1024**3):.2f} Go")
             pred = np.squeeze(pred_tensor.numpy())

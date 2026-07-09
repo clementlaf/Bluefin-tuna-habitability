@@ -15,10 +15,10 @@ class GroupModel():
             {"layers": [0], "name": "zooc"},
             {"layers": [0], "name": "mnkc_epi"},
             {"layers": [0, 2], "name": "mnkc_hmlmeso"},
-            {"layers": [2, 2], "name": "mnkc_lmeso"},
+            {"layers": [2], "name": "mnkc_lmeso"},
             {"layers": [1, 2], "name": "mnkc_mlmeso"},
             {"layers": [0, 1], "name": "mnkc_mumeso"},
-            {"layers": [1, 1], "name": "mnkc_umeso"}
+            {"layers": [1], "name": "mnkc_umeso"}
         ] # groupe fonctionnel : proportion de temps par couche [epipelagic, upper mesopelagic] (lower mesopelagic est le reste)
 
 

@@ -82,7 +82,7 @@ def load_dataset(dname, date, backtrackded=0, min_date=None):
             previous_date = date - timedelta(days=1)
             ds = load_dataset(dname, previous_date, backtrackded=backtrackded+1, min_date=min_date)
             ds.load()  # Load the dataset into memory to modify it
-            ds = ds.assign_coords(time=[date])
+            ds = [np.datetime64(date.replace(tzinfo=None))]
         
         return ds
 

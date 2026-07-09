@@ -3,7 +3,9 @@ import os
 import pickle
 from logger import log
 
-res_path = "/scratch/fra1831/ressources"
+from paths import get_path
+
+res_path = get_path("static_files")
 
 def load_stats(prefix):
     mean_path = f"{res_path}/{prefix}_mean.pkl"

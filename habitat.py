@@ -1,7 +1,9 @@
 import xarray as xr
 import numpy as np
 
-bathymetry_file = "/scratch/fra1831/ressources/bathymetry_sel.nc"
+from paths import get_path
+
+bathymetry_file = f"{get_path('static_files')}/bathymetry_sel.nc"
 bathymetry = xr.open_dataset(bathymetry_file)
 
 def temperature_preference_habitat(ds):

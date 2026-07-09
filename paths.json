@@ -1,0 +1,5 @@
+{
+    "static_files": "/scratch/fra1831/ressources",
+    "models": "/scratch/fra1831/modeles",
+    "output": "/scratch/fra1831/predictions"
+}

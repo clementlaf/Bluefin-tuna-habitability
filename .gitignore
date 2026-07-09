@@ -1,1 +1,3 @@
 *.pyc
+predict.err
+predict.log
