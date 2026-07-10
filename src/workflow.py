@@ -20,7 +20,7 @@ def workflow():
     log("Building habitat from predictions...")
     ds_habitat = build_habitat_from_predictions(ds)
     
-    output_filename = f"{get_path('output')}/habitability_index.nc"
+    output_filename = f"{get_path('OUTPUT_PATH')}/habitability_index.nc"
     
     if os.path.exists(output_filename):
         log(f"Output file {output_filename} already exists. Removing it.")

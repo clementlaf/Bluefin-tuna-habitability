@@ -30,7 +30,7 @@ model_list = [
 log("Loading models weights")
 loader = GroupModel()
 modeles = {
-    title: (keras.models.load_model(f'{get_path("models")}/{name}/best_compact.keras', custom_objects={'MetadataModel': MetadataModel}, compile=False, safe_mode=False), group, mask_layer)
+    title: (keras.models.load_model(f'{get_path("MODEL_WEIGHTS_PATH")}/{name}/best_compact.keras', custom_objects={'MetadataModel': MetadataModel}, compile=False, safe_mode=False), group, mask_layer)
     for name, title, group, mask_layer in model_list
 }
 
@@ -42,7 +42,7 @@ def crop_to_medit(field):
     return field[:220, ...]
 
 ix, iy = 2094, 1322
-ressource_path = get_path("static_files")
+ressource_path = get_path("RESOURCE_PATH")
 
 mean_phys, std_phys = load_stats("phys")
 mean_bio, std_bio = load_stats("bio")

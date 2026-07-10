@@ -4,7 +4,7 @@ import numpy as np
 from paths import get_path
 from logger import log
 
-bathymetry_file = f"{get_path('static_files')}/bathymetry_sel.nc"
+bathymetry_file = f"{get_path('RESOURCE_PATH')}/bathymetry_sel.nc"
 bathymetry = xr.open_dataset(bathymetry_file)
 
 def temperature_preference_habitat(ds):

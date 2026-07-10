@@ -1,0 +1,12 @@
+FROM tensorflow/tensorflow:2.15.0-gpu
+
+# 2. On crée un dossier de travail à l'intérieur du conteneur
+WORKDIR /app
+
+COPY requirements.txt .
+
+RUN pip install -r requirements.txt
+
+COPY . .
+
+CMD ["python", "mon_script_principal.py"]

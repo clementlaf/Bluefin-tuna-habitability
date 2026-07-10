@@ -1,5 +1,5 @@
 {
-    "static_files": " ... /PACKAGE/ressources",
-    "models": " ... /PACKAGE/modeles",
-    "output": " ... "
+    "RESOURCE_PATH": " ... /PACKAGE/ressources",
+    "MODEL_WEIGHTS_PATH": " ... /PACKAGE/modeles",
+    "OUTPUT_PATH": " ... "
 }

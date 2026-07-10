@@ -23,10 +23,10 @@ class GroupModel():
 
 
         self.PATCH_SIZE = 512
-        self.STATIC_PATH = get_path("static_files")
+        self.STATIC_PATH = get_path("RESOURCE_PATH")
 
         #on considère que le seuil normalisé est le même pour tous les groupes fonctionnels
-        ressource_path = get_path("static_files")
+        ressource_path = get_path("RESOURCE_PATH")
         with open(f'{ressource_path}/bio_mean.pkl', 'rb') as f:
             self.mean_Y = float(pickle.load(f)['zooc'])
         with open(f'{ressource_path}/bio_std.pkl', 'rb') as f:

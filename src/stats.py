@@ -5,7 +5,7 @@ from logger import log
 
 from paths import get_path
 
-res_path = get_path("static_files")
+res_path = get_path("RESOURCE_PATH")
 
 def load_stats(prefix):
     mean_path = f"{res_path}/{prefix}_mean.pkl"

@@ -1,6 +1,7 @@
 import json
+import os
 
-path_info = json.load(open("../paths.json"))
+default_path = json.load(open("../paths.json"))
 
 def get_path(key):
-    return path_info[key]
+    return os.environ.get(key, default_path[key])
