@@ -3,13 +3,13 @@ import os
 import pickle
 from logger import log
 
-from paths import get_path
+from paths import get_path, resolve_path
 
 res_path = get_path("RESOURCE_PATH")
 
 def load_stats(prefix):
-    mean_path = f"{res_path}/{prefix}_mean.pkl"
-    std_path = f"{res_path}/{prefix}_std.pkl"
+    mean_path = resolve_path(f"{res_path}/{prefix}_mean.pkl", True)
+    std_path = resolve_path(f"{res_path}/{prefix}_std.pkl", True)
 
     if os.path.exists(mean_path) and os.path.exists(std_path):
         log(f"Loading existing stats for {prefix}")

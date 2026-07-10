@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from src.logger import log
-from src.paths import get_path
+from src.paths import get_path, resolve_path, open_zarr_hybrid
 
 class GroupModel():
     def __init__(self, custom_inputs=None):
@@ -27,13 +27,13 @@ class GroupModel():
 
         #on considère que le seuil normalisé est le même pour tous les groupes fonctionnels
         ressource_path = get_path("RESOURCE_PATH")
-        with open(f'{ressource_path}/bio_mean.pkl', 'rb') as f:
+        with open(resolve_path(f'{ressource_path}/bio_mean.pkl', True), 'rb') as f:
             self.mean_Y = float(pickle.load(f)['zooc'])
-        with open(f'{ressource_path}/bio_std.pkl', 'rb') as f:
+        with open(resolve_path(f'{ressource_path}/bio_std.pkl', True), 'rb') as f:
             self.std_Y = float(pickle.load(f)['zooc'])
-        with open(f'{ressource_path}/bio_no_log_mean.pkl', 'rb') as f:
+        with open(resolve_path(f'{ressource_path}/bio_no_log_mean.pkl', True), 'rb') as f:
             self.mean_Y_no_log = float(pickle.load(f)['zooc'])
-        with open(f'{ressource_path}/bio_no_log_std.pkl', 'rb') as f:
+        with open(resolve_path(f'{ressource_path}/bio_no_log_std.pkl', True), 'rb') as f:
             self.std_Y_no_log = float(pickle.load(f)['zooc'])
         physical_outlier_threshold = self.mean_Y_no_log + 20 * self.std_Y_no_log
         logspace_outlier_threshold = (np.log10(physical_outlier_threshold + 1e-8) - self.mean_Y)/self.std_Y
@@ -50,11 +50,11 @@ class GroupModel():
         else:
             # ["zooc", "npp", "mnkc_epi", "mnkc_hmlmeso", "mnkc_lmeso", "mnkc_mlmeso", "mnkc_mumeso", "mnkc_umeso"] 8 canaux de biogéochimie
             # (2040, 4320, 8)
-            self.y_solve_mask = zarr.open_consolidated(f"{self.STATIC_PATH}/y_solve_mask.zarr")['y_solve_mask'][:] # [:] force le chargement en RAM
+            self.y_solve_mask = open_zarr_hybrid(f"{self.STATIC_PATH}/y_solve_mask.zarr")['y_solve_mask'][:] # [:] force le chargement en RAM
 
             # [depth1, depth2, depth3]
             # (2040, 4320, 3)
-            self.x_solve_mask = zarr.open_consolidated(f"{self.STATIC_PATH}/x_solve_mask.zarr")['x_solve_mask'][:] # [:] force le chargement en RAM
+            self.x_solve_mask = open_zarr_hybrid(f"{self.STATIC_PATH}/x_solve_mask.zarr")['x_solve_mask'][:] # [:] force le chargement en RAM
 
             # lat lon
             lat_1d = np.arange(-80, 90, 1/12)

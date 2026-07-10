@@ -8,7 +8,7 @@ import xarray as xr
 import pandas as pd
 
 from stats import load_stats
-from paths import get_path
+from paths import get_path, resolve_path, open_zarr_hybrid
 
 from loaders.single_group import GroupModel
 from loaders.ABCmodel import MetadataModel
@@ -30,7 +30,7 @@ model_list = [
 log("Loading models weights")
 loader = GroupModel()
 modeles = {
-    title: (keras.models.load_model(f'{get_path("MODEL_WEIGHTS_PATH")}/{name}/best_compact.keras', custom_objects={'MetadataModel': MetadataModel}, compile=False, safe_mode=False), group, mask_layer)
+    title: (keras.models.load_model(resolve_path(f'{get_path("MODEL_WEIGHTS_PATH")}/{name}/best_compact.keras', True), custom_objects={'MetadataModel': MetadataModel}, compile=False, safe_mode=False), group, mask_layer)
     for name, title, group, mask_layer in model_list
 }
 
@@ -47,12 +47,12 @@ ressource_path = get_path("RESOURCE_PATH")
 mean_phys, std_phys = load_stats("phys")
 mean_bio, std_bio = load_stats("bio")
 
-y_mask = xr.open_dataset(f"{ressource_path}/mask_medit.nc", engine='h5netcdf')
+y_mask = xr.open_dataset(resolve_path(f"{ressource_path}/mask_medit.nc", True), engine='h5netcdf')
 y_mask = y_mask['mask'].values
 y_mask = crop_to_medit(y_mask)
 y_mask = filter_to_medit(y_mask, fill_value=0)
 
-x_mask = zarr.open_consolidated(f"{ressource_path}/x_solve_mask.zarr")['x_solve_mask']
+x_mask = open_zarr_hybrid(f"{ressource_path}/x_solve_mask.zarr")['x_solve_mask']
 x_mask = x_mask[iy:iy+512, ix:ix+512, :]
 x_mask = crop_to_medit(x_mask)
 x_mask = filter_to_medit(x_mask, fill_value=0)
