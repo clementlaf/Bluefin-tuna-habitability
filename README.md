@@ -24,13 +24,15 @@ pip install -r requirements.txt
 
 ## Usage
 
+Several files are required to run the workflow. These files are provided in the PACKAGE.zip file. The paths to these files must be set in the paths.json file. PACKAGE.zip is not included in this repository due to its size. Please contact the author to obtain it.
 Unzip PACKAGE.zip when retrieved
 Edit paths.json to set the correct paths to access model weights, static files and output files.
 
 ```bash
-python src/workflow.py
+cd src
+python workflow.py
 ```
 
 ## PERFORMANCES
-Without access to GPU, expect a 15 minutes runtime for the full workflow. With access to a GPU, expect a 5 minutes runtime for the full workflow.
+Without access to GPU, expect a 10 to 15 minutes runtime for the full workflow. With access to a GPU, expect a 5 minutes runtime for the full workflow.
 
