@@ -2,6 +2,7 @@ import xarray as xr
 import numpy as np
 
 from paths import get_path
+from logger import log
 
 bathymetry_file = f"{get_path('static_files')}/bathymetry_sel.nc"
 bathymetry = xr.open_dataset(bathymetry_file)
@@ -68,4 +69,7 @@ def build_habitat_from_predictions(ds):
     ds['seasonality'] = seasonality_habitat(ds)
     # combinaison des effets
     ds['habitability_index'] = (('time', 'lat', 'lon'), (ds['temperature_preference'] * ds['food_effect'] * ds['predation_effect'] * ds['seasonality'] * ds['bathymetry_effect']).astype(np.float32).values)
+    
+    log("Habitability index built successfully.")
+
     return ds

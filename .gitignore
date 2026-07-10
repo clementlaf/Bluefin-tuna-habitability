@@ -2,3 +2,4 @@
 predict.err
 predict.log
 ecsbatch*
+*.nc

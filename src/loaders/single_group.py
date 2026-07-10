@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from src.logger import log
-
+from src.paths import get_path
 
 class GroupModel():
     def __init__(self, custom_inputs=None):
@@ -23,10 +23,10 @@ class GroupModel():
 
 
         self.PATCH_SIZE = 512
-        self.STATIC_PATH = "/scratch/fra1831/ressources"
+        self.STATIC_PATH = get_path("static_files")
 
         #on considère que le seuil normalisé est le même pour tous les groupes fonctionnels
-        ressource_path = "/scratch/fra1831/ressources"
+        ressource_path = get_path("static_files")
         with open(f'{ressource_path}/bio_mean.pkl', 'rb') as f:
             self.mean_Y = float(pickle.load(f)['zooc'])
         with open(f'{ressource_path}/bio_std.pkl', 'rb') as f:

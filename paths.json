@@ -1,5 +1,5 @@
 {
-    "static_files": "/scratch/fra1831/ressources",
-    "models": "/scratch/fra1831/modeles",
-    "output": "/scratch/fra1831/predictions"
+    "static_files": "C:/Users/clafond/Downloads/PACKAGE/ressources",
+    "models": "C:/Users/clafond/Downloads/PACKAGE/modeles",
+    "output": "C:/Users/clafond/Bluefin-tuna-habitability/predictions"
 }
