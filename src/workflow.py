@@ -1,4 +1,5 @@
 import os
+import sys
 import s3fs
 
 from download_and_format import load_and_format_datasets
@@ -7,14 +8,21 @@ from habitat import build_habitat_from_predictions
 from paths import get_path, resolve_path
 from logger import log
 
+from datetime import datetime
+start_date = sys.argv[1] if len(sys.argv) > 1 else None
+start_date = datetime.strptime(start_date, "%Y-%m-%d") if start_date else None
+end_date = sys.argv[2] if len(sys.argv) > 2 else None
+end_date = datetime.strptime(end_date, "%Y-%m-%d") if end_date else None
+
 def workflow():
+    log(f"Workflow started with start_date={start_date if start_date else 'not specified'} and end_date={end_date if end_date else 'not specified'}")
     output_dir = get_path('OUTPUT_PATH')
     output_filename = f"{output_dir}/habitability_index.nc"
     is_s3 = output_filename.startswith("s3://")
     log("Starting workflow...")
     # Load and format datasets
     log("Loading and formatting datasets...")
-    prediction_input = load_and_format_datasets()
+    prediction_input = load_and_format_datasets(start_date_optional=start_date, end_date_optional=end_date)
     
     # Predict biomass
     log("Predicting biomass...")

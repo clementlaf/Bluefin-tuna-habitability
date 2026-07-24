@@ -91,8 +91,16 @@ def load_dataset(dname, date, backtrackded=0, min_date=None):
         traceback.print_exc()
         raise
 
-def load_and_format_datasets():
-    current_date = start_date
+def load_and_format_datasets(start_date_optional=None, end_date_optional=None):
+    if start_date_optional is not None:
+        current_date = start_date_optional
+    else:
+        current_date = start_date
+    if end_date_optional is not None:
+        end_date = end_date_optional
+    else:
+        end_date = end_date
+    log(f"Loading and formatting datasets from {current_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
     i = 0
     ds_formatted = None
     while current_date <= end_date: # timedelta necessary, looks like equality comparison is not working as expected
