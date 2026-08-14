@@ -35,13 +35,15 @@ modeles = {
 }
 
 def filter_to_medit(field, fill_value=np.nan):
+    # fills the areas outside the Mediterranean Sea with a fill value (default is NaN)
     field[220:, ...] = fill_value
     field[-80:, :60, ...] = fill_value
     return field
 def crop_to_medit(field):
+    # crops the field to the Mediterranean Sea area (220x512 grid)
     return field[:220, ...]
 
-ix, iy = 2094, 1322
+ix, iy = 2094, 1322 # corresponds to 5.5° east, 30.17° north, which is the south-west corner of the Mediterranean Sea in the 1/12° grid
 ressource_path = get_path("RESOURCE_PATH")
 
 mean_phys, std_phys = load_stats("phys")
@@ -82,33 +84,29 @@ def predict_biomass(ds):
         log(f"Predicting for {current_date.strftime('%Y-%m-%d')} (t={t})")
         for name, (model, group, mask_layer) in modeles.items():
             
-            # metadata = [-80 + iy/12, -180 + ix/12, doy, 2026, group]
             x_combined = loader.build_x(ds.isel(time=t), group, day_of_year=t+doy-1)
             input_tensor = tf.convert_to_tensor(np.expand_dims(x_combined, axis=0), dtype=tf.float32)
             t0 = time.time()
-            pred_tensor = model(input_tensor, training=False)
+            pred_tensor = model(input_tensor, training=False) # perform the prediction
             log("inference time: {:.2f} seconds".format(time.time() - t0))
-            # mem_info = tf.config.experimental.get_memory_info('GPU:0')
-            # log(f"Pic de VRAM: {mem_info['peak'] / (1024**3):.2f} Go")
-            pred = np.squeeze(pred_tensor.numpy())
+            pred = np.squeeze(pred_tensor.numpy()) # remove the batch dimension
             pred = crop_to_medit(pred)
             pred = filter_to_medit(pred, fill_value=np.nan)
             x_combined = crop_to_medit(x_combined)
             x_combined = filter_to_medit(x_combined, fill_value=np.nan)
-            # x_dict = {"input_field": x_combined, "metadata": metadata}
-            # pred = np.squeeze(model.predict(np.expand_dims(x_combined, axis=0)))
 
             group_name = GROUPS[group]
             group_mean = float(mean_bio[group_name])
             group_std = float(std_bio[group_name])
 
-            pred_phys = pred[:, :] * group_std + group_mean # dé-normalisation
-            pred_phys = 10 ** pred_phys - 1e-8 # Inverse de la log10 appliquée lors de la préparation des données
+            pred_phys = pred[:, :] * group_std + group_mean # de-normalisation
+            pred_phys = 10 ** pred_phys - 1e-8 # Opposite of the log10 applied during preprocessing
 
             pred_phys[np.squeeze(y_mask[..., mask_layer]) == 0] = np.nan
 
             predictions_history[group_name].append(pred_phys)
 
+            # saving all the physical variables and NPP for each layer
             if name == "epi medit":
                 x_combined[np.squeeze(x_mask[..., 0]) == 0] = np.nan
                 T = x_combined[:, :, 2]
@@ -224,9 +222,9 @@ def predict_biomass(ds):
     }
 
     for var in VARIABLES:
-        # On convertit la liste de matrices 2D en une matrice 3D (time, lat, lon)
+        # We convert the list of 2D matrices into a 3D matrix (time, lat, lon)
         data_3d = np.array(predictions_history[var], dtype=np.float32)
-        # On assigne les dimensions correspondantes
+        # We assign the corresponding dimensions
         attrs = {}
         if var in full_names:
             attrs['long_name'] = full_names[var]

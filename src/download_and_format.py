@@ -15,23 +15,26 @@ mean_bio, std_bio = load_stats("bio")
 datasets = {
     "temperature": {
         "dataset_id": "cmems_mod_med_phy-tem_anfc_4.2km_P1D-m",
-        "variables": ["thetao"]
+        "variables": ["thetao"] # potential temperature
     },
     "currents": {
         "dataset_id": "cmems_mod_med_phy-cur_anfc_4.2km_P1D-m",
-        "variables": ["uo", "vo"]
+        "variables": ["uo", "vo"] # current components
     },
     "npp": {
         "dataset_id": "cmems_mod_med_bgc-bio_anfc_4.2km_P1D-m",
-        "variables": ["nppv"]
+        "variables": ["nppv"] # net primary production
     },
     "Kd": {
         "dataset_id": "cmems_mod_med_bgc-optics_anfc_4.2km_P1D-m",
-        "variables": ["kd490"]
+        "variables": ["kd490"] # volume attenuation coefficient of downwelling radiative flux in sea water 490nm
     }
 }
 
-def get_end_date():
+def get_end_date()->datetime:
+    """
+    retrieves the last fully available date from all desired datasets
+    """
     closest_date = datetime.now(timezone.utc) + timedelta(days=1000)  # Initialize with a date in the future
     for dname, dataset in datasets.items():
         catalog_entry = copernicusmarine.describe(dataset_id=dataset["dataset_id"], disable_progress_bar=True)
@@ -45,6 +48,7 @@ def get_end_date():
     return closest_date
 
 
+# define start date as today and end date as last available date
 start_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 end_date = get_end_date().replace(hour=0, minute=0, second=0, microsecond=0)
 log(f"Downloading data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
@@ -57,6 +61,7 @@ def load_dataset(dname, date, backtrackded=0, min_date=None):
     log(f"loading {dname} data for {date.strftime('%Y-%m-%d')}")
     dataset = datasets[dname]
     try:
+        # dynamically load the dataset over the entire domain
         ds = copernicusmarine.open_dataset(
             dataset_id=dataset["dataset_id"],
             dataset_version="202511",
@@ -71,7 +76,7 @@ def load_dataset(dname, date, backtrackded=0, min_date=None):
             end_datetime=date,
             coordinates_selection_method="strict-inside",
         )
-        ds.load()
+        ds.load() # download from remote, now in RAM
 
         # backtracking (using previous day) if the downloaded file is empty
         if is_empty(ds):
@@ -82,7 +87,7 @@ def load_dataset(dname, date, backtrackded=0, min_date=None):
             previous_date = date - timedelta(days=1)
             ds = load_dataset(dname, previous_date, backtrackded=backtrackded+1, min_date=min_date)
             ds.load()  # Load the dataset into memory to modify it
-            ds = [np.datetime64(date.replace(tzinfo=None))]
+            ds = [np.datetime64(date.replace(tzinfo=None))] # manually replace the date of the dataset to set today's
         
         return ds
 
@@ -91,7 +96,13 @@ def load_dataset(dname, date, backtrackded=0, min_date=None):
         traceback.print_exc()
         raise
 
-def load_and_format_datasets(start_date_optional=None, end_date_optional=None):
+def load_and_format_datasets(start_date_optional:datetime|None=None, end_date_optional:datetime|None=None):
+    """
+    The parent method to download and preprocess datasets
+    It iterates on times, loads datasets, regrids to a 1/12° 512x512px resolution, normalizes data and concatenates on vertical layers
+    """
+
+    # get start date and end_date
     if start_date_optional is not None:
         current_date = start_date_optional
     else:
@@ -103,7 +114,7 @@ def load_and_format_datasets(start_date_optional=None, end_date_optional=None):
     log(f"Loading and formatting datasets from {current_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
     i = 0
     ds_formatted = None
-    while current_date <= end_date: # timedelta necessary, looks like equality comparison is not working as expected
+    while current_date <= end_date: # iterate on all times
         ds_temperature = load_dataset("temperature", current_date)
         ds_current = load_dataset("currents", current_date)
         ds_npp = load_dataset("npp", current_date)
@@ -112,19 +123,20 @@ def load_and_format_datasets(start_date_optional=None, end_date_optional=None):
 
         # --- 1. DOWNSCALING & CROPPING AU TOUT DÉBUT ---
         log("Cropping to Mediterranean domain and downscaling...")
-        lon_start = ds_npp['longitude'].min().item()
+        lon_start = ds_npp['longitude'].min().item() # use NPP longitudes as a common reference for all fields
 
         def crop_and_downscale(ds):
             if ds['longitude'].min().item() < lon_start:
                 ds = ds.sel(longitude=slice(lon_start, None))
             return ds.coarsen(latitude=2, longitude=2, boundary='trim').mean()
 
+        # uniformize the area and downscale from 1/24° to 1/12°
         ds_temperature = crop_and_downscale(ds_temperature)
         ds_current = crop_and_downscale(ds_current)
         ds_npp = crop_and_downscale(ds_npp)
         ds_Kd = crop_and_downscale(ds_Kd)
 
-        # --- 2. COMPUTE POUR ACCÉLÉRER LA SUITE ---
+        # compute graphs
         ds_temperature = ds_temperature.compute()
         ds_current = ds_current.compute()
         ds_npp = ds_npp.compute()
@@ -132,37 +144,35 @@ def load_and_format_datasets(start_date_optional=None, end_date_optional=None):
 
         log("Preprocessing NPP...")
         npp_filled = ds_npp['nppv'].fillna(0)
-        npp_integrated = npp_filled.integrate(coord='depth')
+        npp_integrated = npp_filled.integrate(coord='depth') # integrate NPP on depth to retrieve 2D NPP
         npp_integrated = npp_integrated.clip(min=0)
         ocean_mask = ds_npp['nppv'].isel(depth=0).notnull()
         npp_integrated = npp_integrated.where(ocean_mask)
-        # Reconversion en Dataset pour la cohérence avec le reste du code
-        da_npp_log = np.log10(npp_integrated + 1e-8)
+        da_npp_log = np.log10(npp_integrated + 1e-8) # log-normalize NPP
         ds_npp = da_npp_log.to_dataset(name='nppv')
 
         log("Calculating depth layers based on Kd...")
-        # --- 3. CORRECTION DU BROADCAST K-D ---
-        # On utilise le DataArray pour ne pas écraser les noms de variables plus tard
-        Zeuph = 4.6 / ds_Kd['kd490']
+        Zeuph = 4.6 / ds_Kd['kd490'] # calcul profondeur euphotique à partir de Kd490
+        # définition des couches de profondeur en fonction de la profondeur euphotique
         limit_1 = 1.5 * Zeuph
         limit_2 = 4.5 * Zeuph
         limit_3 = (10.5 * Zeuph).clip(max=1000)
 
         depth = ds_temperature['depth']
 
+        # création de masks pour chaque couche de profondeur
         mask_l1 = (depth >= 0) & (depth <= limit_1)
         mask_l2 = (depth > limit_1) & (depth <= limit_2)
         mask_l3 = (depth > limit_2) & (depth <= limit_3)
 
         def extract_layers(da, masks):
+            # extract the mean value of the variable for each depth layer defined by the masks
             layer1 = da.where(masks[0]).mean(dim='depth', skipna=True)
             layer2 = da.where(masks[1]).mean(dim='depth', skipna=True)
             layer3 = da.where(masks[2]).mean(dim='depth', skipna=True)
 
-            # On rassemble en gardant 'depth' comme dimension (1, 2, 3) pour que votre .stack() fonctionne
             da_layers = xr.concat([layer1, layer2, layer3], 
                             dim=xr.DataArray([1, 2, 3], dims='depth', name='depth'))
-            # Retourne un Dataset pour matcher votre code (eds.to_array())
             return da_layers.to_dataset(name=da.name)
 
         log("Extracting depth layers...")
@@ -181,6 +191,8 @@ def load_and_format_datasets(start_date_optional=None, end_date_optional=None):
         std_v = std_phys['V']
 
         log("Normalizing data...")
+        # log-norm was applied at line 151 to NPP (the only biological variable)
+        # all that is left is to normalize the physical variables and NPP using the precomputed mean and std
         ds_npp = (ds_npp - mean_npp) / std_npp
         ds_npp = ds_npp.fillna(0.0)
         ds_temperature = (ds_temperature_layers - mean_temperature) / std_temperature
@@ -193,6 +205,7 @@ def load_and_format_datasets(start_date_optional=None, end_date_optional=None):
         ### X : Physique + NPP ###
         log("Flattening depths and variables into features...")
 
+        # concatenation of U, V and T and their depths as 'VAR_DEPTH' features
         processed_phys_arrays = []
         for eds in [ds_u, ds_v, ds_temperature]:
             tmp_ds = eds.to_array(dim='variables').stack(features=('variables', 'depth'))
