@@ -1,11 +1,10 @@
 import os
 import sys
-import s3fs
 
 from download_and_format import load_and_format_datasets
 from predict_biomass import predict_biomass
 from habitat import build_habitat_from_predictions
-from paths import get_path, resolve_path
+from paths import get_path, resolve_path, get_s3fs
 from logger import log
 
 from datetime import datetime
@@ -33,7 +32,7 @@ def workflow():
     ds_habitat = build_habitat_from_predictions(ds)
     
     if is_s3:
-        fs = s3fs.S3FileSystem()
+        fs = get_s3fs()
         if fs.exists(output_filename):
             log(f"Output file {output_filename} already exists on S3. Removing it.")
             fs.rm(output_filename)

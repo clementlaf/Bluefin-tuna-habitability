@@ -1,5 +1,5 @@
 {
-    "RESOURCE_PATH": " ... /PACKAGE/ressources",
-    "MODEL_WEIGHTS_PATH": " ... /PACKAGE/modeles",
+    "RESOURCE_PATH": "s3://oidc-clafond/PACKAGE/ressources",
+    "MODEL_WEIGHTS_PATH": "s3://oidc-clafond/PACKAGE/modeles",
     "OUTPUT_PATH": " ... "
 }
