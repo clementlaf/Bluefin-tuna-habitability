@@ -80,14 +80,14 @@ def load_dataset(dname, date, backtrackded=0, min_date=None):
 
         # backtracking (using previous day) if the downloaded file is empty
         if is_empty(ds):
-            if min_date is not None and date >= min_date:
+            if min_date is not None and date < min_date:
                 log("Backtracking stopped: reached the minimum date limit.")
                 raise ValueError(f"No data available for {dname} on {date.strftime('%Y-%m-%d')} and reached the minimum date limit.")
             log(f"Backtracked {backtrackded+1} day(s) for {dname} on {date.strftime('%Y-%m-%d')}, file updated.")
             previous_date = date - timedelta(days=1)
             ds = load_dataset(dname, previous_date, backtrackded=backtrackded+1, min_date=min_date)
             ds.load()  # Load the dataset into memory to modify it
-            ds = [np.datetime64(date.replace(tzinfo=None))] # manually replace the date of the dataset to set today's
+            ds = ds.assign_coords(time=[np.datetime64(date.replace(tzinfo=None))]) # manually replace the date of the dataset to set today's
         
         return ds
 
@@ -107,14 +107,12 @@ def load_and_format_datasets(start_date_optional:datetime|None=None, end_date_op
         current_date = start_date_optional
     else:
         current_date = start_date
-    if end_date_optional is not None:
-        end_date = end_date_optional
-    else:
-        end_date = end_date
-    log(f"Loading and formatting datasets from {current_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+    # nom distinct de la globale end_date (ligne 53) : sinon Python la considère locale -> UnboundLocalError
+    last_date = end_date_optional if end_date_optional is not None else end_date
+    log(f"Loading and formatting datasets from {current_date.strftime('%Y-%m-%d')} to {last_date.strftime('%Y-%m-%d')}")
     i = 0
     ds_formatted = None
-    while current_date <= end_date: # iterate on all times
+    while current_date <= last_date: # iterate on all times
         ds_temperature = load_dataset("temperature", current_date)
         ds_current = load_dataset("currents", current_date)
         ds_npp = load_dataset("npp", current_date)
