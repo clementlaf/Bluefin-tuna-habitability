@@ -61,12 +61,40 @@ def resolve_path(full_path: str, require_local: bool = False) -> str:
 
     # On ne télécharge que si on ne l'a pas déjà fait
     if not os.path.exists(local_tmp_path):
-        fs = get_s3fs()
-        # L'argument recursive=True permet de télécharger aussi bien un fichier unique qu'un dossier entier
-        fs.get(full_path, local_tmp_path, recursive=True)
+        _download_with_retry(full_path, local_tmp_path)
         print(f"[Infrastructure] Téléchargement terminé -> {local_tmp_path}")
 
     return local_tmp_path
+
+
+def _download_with_retry(full_path: str, local_path: str, attempts: int = 5) -> None:
+    """
+    Télécharge depuis S3 avec plusieurs tentatives (coupures réseau ponctuelles du MinIO).
+    On écrit dans un chemin temporaire puis on renomme : un téléchargement interrompu
+    ne laisse jamais un fichier partiel que l'on prendrait ensuite pour complet.
+    """
+    import shutil
+    import time
+
+    fs = get_s3fs()
+    partial_path = local_path + ".part"
+    for attempt in range(1, attempts + 1):
+        try:
+            # L'argument recursive=True permet de télécharger aussi bien un fichier unique qu'un dossier entier
+            fs.get(full_path, partial_path, recursive=True)
+            os.replace(partial_path, local_path)
+            return
+        except Exception as e:
+            # nettoyage du téléchargement partiel (fichier ou dossier)
+            if os.path.isdir(partial_path):
+                shutil.rmtree(partial_path, ignore_errors=True)
+            elif os.path.exists(partial_path):
+                os.remove(partial_path)
+            if attempt == attempts:
+                raise
+            wait = 2 ** attempt
+            print(f"[Infrastructure] Échec du téléchargement ({attempt}/{attempts}) : {e!r}. Nouvel essai dans {wait}s")
+            time.sleep(wait)
 
 def open_zarr_hybrid(chemin_complet: str):
     """Ouvre un Zarr consolidé, qu'il soit sur S3 ou sur PC"""
